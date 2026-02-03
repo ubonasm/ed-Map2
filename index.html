@@ -1,0 +1,2054 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ed-Map ver 0.2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0e27;
+            color: #e0e6ed;
+            overflow: hidden;
+            /* Remove touch-action: none to allow proper touch interaction */
+        }
+
+        #toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%);
+            padding: 16px 24px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 新しいツールバーボタンのスタイルを追加 */
+        .toolbar-btn {
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .toolbar-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.4s, height 0.4s;
+        }
+
+        .toolbar-btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .toolbar-btn:active {
+            transform: translateY(1px);
+        }
+
+        /* Primary action buttons */
+        .toolbar-btn.primary {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: white;
+        }
+
+        .toolbar-btn.primary:hover {
+            background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+            box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+        }
+
+        /* Success buttons */
+        .toolbar-btn.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .toolbar-btn.success:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+        }
+
+        /* Info buttons */
+        .toolbar-btn.info {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+            color: white;
+        }
+
+        .toolbar-btn.info:hover {
+            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+            box-shadow: 0 4px 16px rgba(6, 182, 212, 0.4);
+        }
+
+        /* Warning buttons */
+        .toolbar-btn.warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+
+        .toolbar-btn.warning:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
+        }
+
+        /* Secondary buttons */
+        .toolbar-btn.secondary {
+            background: rgba(51, 65, 85, 0.8);
+            color: #e0e6ed;
+            border: 1px solid rgba(100, 116, 139, 0.4);
+        }
+
+        .toolbar-btn.secondary:hover {
+            background: rgba(71, 85, 105, 0.9);
+            border-color: rgba(139, 92, 246, 0.6);
+            box-shadow: 0 4px 16px rgba(139, 92, 246, 0.2);
+        }
+
+        /* Zoom indicator styling */
+        .zoom-indicator {
+            padding: 8px 16px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #a78bfa;
+            margin-left: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        #container {
+            position: fixed;
+            top: 56px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            /* Remove default grab cursor, only show when Ctrl/Shift is pressed */
+            cursor: default;
+            /* Preventing text selection during touch drag */
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        /* Add grab cursor when pan mode is active */
+        #container.pan-mode {
+            cursor: grab;
+        }
+
+        #container.dragging {
+            cursor: grabbing;
+        }
+
+        /* New: Adjust container width when panels are open */
+        #container.with-panel {
+            right: 400px;
+        }
+        #container.with-doc-panel {
+            right: 500px;
+        }
+
+        #edgeCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #nodesLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            /* CHANGE: Remove width/height constraints to allow infinite canvas */
+            width: 10000px;
+            height: 10000px;
+            /* Remove pointer-events: none to allow node interaction */
+            pointer-events: auto;
+        }
+
+        .node {
+            position: absolute;
+            background: rgba(30, 41, 59, 0.95);
+            border: 2px solid;
+            border-radius: 12px;
+            padding: 12px;
+            min-width: 180px;
+            /* Change cursor to default, only show move on node header */
+            cursor: default;
+            user-select: none;
+            transform-origin: center center;
+            /* Allow pointer events on nodes */
+            pointer-events: auto;
+        }
+
+        .node.selected {
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.5);
+        }
+
+        .node-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            /* Add move cursor to header for dragging */
+            cursor: move;
+        }
+
+        .node-icon {
+            font-size: 20px;
+        }
+
+        .node-input {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(100, 116, 139, 0.3);
+            color: #e0e6ed;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            min-height: 24px;
+            line-height: 1.4;
+        }
+
+        .node-controls {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .node-btn {
+            padding: 4px 10px;
+            font-size: 12px;
+            background: rgba(79, 70, 229, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .node-btn:hover {
+            background: rgba(99, 102, 241, 0.9);
+        }
+
+        .node-image {
+            width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            border-radius: 6px;
+            margin-top: 8px;
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .group {
+            position: absolute;
+            border: 2px dashed rgba(139, 92, 246, 0.6);
+            border-radius: 12px;
+            pointer-events: none;
+            transform-origin: top left;
+        }
+
+        .group-label {
+            position: absolute;
+            top: -28px;
+            left: 8px;
+            background: #8b5cf6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            pointer-events: all;
+            cursor: move;
+        }
+
+        .icon-selector, .color-selector {
+            position: absolute;
+            background: rgba(30, 41, 59, 0.98);
+            border: 1px solid rgba(100, 116, 139, 0.5);
+            border-radius: 8px;
+            padding: 12px;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .icon-grid, .color-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr); /* アイコンを13個に増やしたため、グリッドを5列から6列に変更 */
+            gap: 8px;
+        }
+
+        .icon-option, .color-option {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .icon-option:hover, .color-option:hover {
+            border-color: #4f46e5;
+            transform: scale(1.1);
+        }
+
+        .color-option {
+            border-radius: 50%;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #references-panel {
+            position: fixed;
+            top: 56px;
+            right: -400px;
+            width: 400px;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.98);
+            border-left: 1px solid rgba(100, 116, 139, 0.3);
+            display: flex;
+            flex-direction: column;
+            transition: right 0.3s ease;
+            z-index: 100;
+        }
+
+        #references-panel.open {
+            right: 0;
+        }
+
+        /* Added document panel styles */
+        #document-panel {
+            position: fixed;
+            top: 56px;
+            right: -500px;
+            width: 500px;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.98);
+            border-left: 1px solid rgba(100, 116, 139, 0.3);
+            display: flex;
+            flex-direction: column;
+            transition: right 0.3s ease;
+            z-index: 100;
+        }
+
+        #document-panel.open {
+            right: 0;
+        }
+
+        .panel-header {
+            padding: 16px;
+            border-bottom: 1px solid rgba(100, 116, 139, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e0e6ed;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .reference-item {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+            border-left: 3px solid #4f46e5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #94a3b8;
+        }
+
+        .error {
+            color: #ef4444;
+            padding: 12px;
+            background: rgba(220, 38, 38, 0.1);
+            border-radius: 6px;
+            margin: 12px 0;
+        }
+
+        .btn-toggle-panel {
+            background: #10b981;
+        }
+
+        .btn-toggle-panel:hover {
+            background: #059669;
+        }
+
+        .spinner {
+            border: 3px solid rgba(100, 116, 139, 0.3);
+            border-top: 3px solid #4f46e5;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* New: Styles for document panel */
+        .copy-btn {
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .copy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(16, 185, 129, 0.3);
+        }
+
+        .document-text {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #e0e6ed;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* ミニマップのスタイルを追加 */
+        #minimap {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            background: rgba(30, 41, 59, 0.95);
+            border: 2px solid #475569;
+            border-radius: 8px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        #minimap canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #minimap-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 230px;
+            padding: 8px 12px;
+            background: rgba(30, 41, 59, 0.95);
+            border: 2px solid #475569;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 12px;
+        }
+
+        #minimap-toggle:hover {
+            background: rgba(51, 65, 85, 0.95);
+        }
+
+        .minimap-viewport {
+            position: absolute;
+            border: 2px solid #3b82f6;
+            background: rgba(59, 130, 246, 0.2);
+            pointer-events: none;
+        }
+
+        #fit-all-btn {
+            position: fixed;
+            bottom: 180px;
+            right: 20px;
+            padding: 10px 15px;
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        #fit-all-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(139, 92, 246, 0.4);
+        }
+
+        /* Added minimap canvas style */
+        #minimap-canvas {
+            width: 200px;
+            height: 150px;
+            background: #1a1a2e;
+            border-radius: 6px;
+            display: block;
+            /* Added cursor pointer for minimap interaction */
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+    <h2><font color="white">ed-Map</font></h2>ver 0.25
+        <!-- ボタンにクラスを追加してスタイルを適用 -->
+        <button class="toolbar-btn primary" onclick="createNewMindmap()">New Map</button>
+        <button class="toolbar-btn secondary" onclick="exportToTxt()">save as TXT</button>
+        <button class="toolbar-btn info" onclick="exportToJson()">save as JSON</button>
+        <button class="toolbar-btn info" onclick="importFromJson()">read JSON</button>
+        <button class="toolbar-btn success" onclick="exportToPNG()">save as PNG</button>
+        <button class="toolbar-btn success" onclick="exportToJPG()">save as JPG</button>
+        <button class="toolbar-btn warning" onclick="openApiSettings()">setting API key</button>
+        <button class="toolbar-btn primary btn-toggle-panel" onclick="toggleReferencesPanel()">Generate References</button>
+        <button class="toolbar-btn info" onclick="generateDocument()">Generate Thesis</button>
+        <div class="zoom-indicator" id="zoomIndicator">100%</div>
+    </div>
+
+    <div id="container">
+        <canvas id="edgeCanvas"></canvas>
+        <div id="nodesLayer"></div>
+    </div>
+
+    <div id="references-panel">
+        <div class="panel-header">
+            <span class="panel-title">Reference (APA 7th)</span>
+            <button onclick="closeReferencesPanel()" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;">閉じる</button>
+        </div>
+        <div class="panel-content" id="references-content">
+            <p style="color: #94a3b8; text-align: center;">「参考文献生成」ボタンをクリックして、マインドマップから参考文献を生成します。</p>
+        </div>
+    </div>
+
+    <!-- Document Generation Panel -->
+    <div id="document-panel">
+        <div class="panel-header">
+            <span class="panel-title">論文形式の文書</span>
+            <button onclick="closeDocumentPanel()" class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;">閉じる</button>
+        </div>
+        <div class="panel-content" id="document-content">
+            <p style="color: #94a3b8; text-align: center;">「文書生成」ボタンをクリックして、マインドマップから論文形式の文書を生成します。</p>
+        </div>
+    </div>
+
+    <!-- Added missing file input elements for image and JSON upload -->
+    <input type="file" id="imageInput" accept="image/*" style="display: none;">
+    <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+    <!-- ミニマップと全体表示ボタンを追加 -->
+    <button id="minimap-toggle">🗺️ マップ</button>
+    <div id="minimap" style="display: none;">
+        <canvas id="minimap-canvas"></canvas>
+        <div class="minimap-viewport"></div>
+    </div>
+    <button id="fit-all-btn" title="すべてのノードを表示">📐 全体表示</button>
+
+    <script>
+        let nodes = [];
+        let connections = [];
+        let groups = [];
+        let selectedNodes = new Set();
+        let draggedNode = null;
+        let draggedGroup = null;
+        let isDraggingCanvas = false;
+        let dragStartPos = { x: 0, y: 0 };
+        let canvasOffset = { x: 0, y: 0 };
+        let scale = 1;
+        let nodeIdCounter = 1;
+        let groupIdCounter = 1;
+        let isPanning = false;
+
+        let touchStartDistance = 0;
+        let lastTouchPos = null;
+        let isTouchDragging = false;
+
+        let isNodeInteraction = false; // Flag to prevent canvas drag when interacting with nodes
+        let isPanMode = false;
+
+        const edgeCanvas = document.getElementById('edgeCanvas');
+        const ctx = edgeCanvas.getContext('2d');
+        const container = document.getElementById('container');
+        const nodesContainer = document.getElementById('nodesLayer');
+        const zoomDisplay = document.getElementById('zoom-display'); // This variable is not used after styling changes
+        const zoomIndicator = document.getElementById('zoomIndicator'); // Renamed for clarity based on new HTML element
+
+        const minimap = document.getElementById('minimap');
+        const minimapCanvas = document.getElementById('minimap-canvas');
+        const minimapCtx = minimapCanvas.getContext('2d');
+        const minimapToggle = document.getElementById('minimap-toggle');
+        const minimapViewport = document.querySelector('.minimap-viewport');
+        const fitAllBtn = document.getElementById('fit-all-btn');
+
+        let minimapVisible = false;
+        let isDraggingMinimap = false;
+        let minimapBounds = { minX: 0, minY: 0, maxX: 0, maxY: 0, minimapScale: 1 };
+
+        minimapToggle.addEventListener('click', () => {
+            minimapVisible = !minimapVisible;
+            minimap.style.display = minimapVisible ? 'block' : 'none';
+            if (minimapVisible) {
+                updateMinimap();
+            }
+        });
+
+        function resizeCanvas() {
+            const rect = container.getBoundingClientRect();
+            edgeCanvas.width = rect.width;
+            edgeCanvas.height = rect.height;
+            drawConnections();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const icons = ['💡', '⭕', '⭐', '■', '▲', '😊', '😢', '✓', '❗', '❓', '🏠', '📝', '✏️']; /* 8つの新しいアイコンを追加（笑顔、泣き顔、チェック、ビックリ、クエスチョン、家、ノート、鉛筆） */
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
+        // アイコン選択UI
+        const iconSelector = document.createElement('div');
+        iconSelector.className = 'icon-selector';
+        document.body.appendChild(iconSelector);
+        icons.forEach(icon => {
+            const div = document.createElement('div');
+            div.className = 'icon-option';
+            div.textContent = icon;
+            div.onclick = () => {
+                if (iconSelector.dataset.nodeId) {
+                    const node = nodes.find(n => n.id == iconSelector.dataset.nodeId);
+                    if (node) {
+                        node.icon = icon;
+                        renderNodes();
+                        saveToLocalStorage();
+                    }
+                }
+                iconSelector.style.display = 'none';
+            };
+            iconSelector.appendChild(div);
+        });
+
+        // カラー選択UI
+        const colorSelector = document.createElement('div');
+        colorSelector.className = 'color-selector';
+        document.body.appendChild(colorSelector);
+        colors.forEach(color => {
+            const div = document.createElement('div');
+            div.className = 'color-option';
+            div.style.backgroundColor = color;
+            div.onclick = () => {
+                if (colorSelector.dataset.nodeId) {
+                    const node = nodes.find(n => n.id == colorSelector.dataset.nodeId);
+                    if (node) {
+                        node.color = color;
+                        renderNodes();
+                        drawConnections();
+                        saveToLocalStorage();
+                    }
+                }
+                colorSelector.style.display = 'none';
+            };
+            colorSelector.appendChild(div);
+        });
+
+        // ノード作成
+        function createNode(parentId = null, x = null, y = null) {
+            const node = {
+                id: nodeIdCounter++,
+                text: 'New Node',
+                icon: '💡',
+                color: '#3b82f6',
+                x: x !== null ? x : Math.random() * 400 + 100,
+                y: y !== null ? y : Math.random() * 300 + 100,
+                parent: parentId,
+                image: null
+            };
+            nodes.push(node);
+            
+            if (parentId) {
+                connections.push({ from: parentId, to: node.id });
+            }
+            
+            renderNodes();
+            drawConnections();
+            saveToLocalStorage();
+        }
+
+        // ノード描画
+        function renderNodes() {
+            const existingNodes = nodesContainer.querySelectorAll('.node, .group');
+            existingNodes.forEach(el => el.remove());
+            
+            nodes.forEach(node => {
+                const nodeEl = document.createElement('div');
+                nodeEl.className = 'node';
+                nodeEl.id = `node-${node.id}`;
+                nodeEl.dataset.id = node.id;
+                nodeEl.style.left = (node.x * scale + canvasOffset.x) + 'px';
+                nodeEl.style.top = (node.y * scale + canvasOffset.y) + 'px';
+                nodeEl.style.transform = `scale(${scale})`;
+                nodeEl.style.transformOrigin = '0 0';
+                nodeEl.style.borderColor = node.color;
+                if (selectedNodes.has(node.id)) {
+                    nodeEl.classList.add('selected');
+                }
+
+                nodeEl.onmousedown = (e) => {
+                    // If in pan mode, don't handle node events - let it pass through to container
+                    if (isPanMode) {
+                        console.log('[v0] Pan mode active - not handling node drag');
+                        return; // Don't stop propagation - let container handle it
+                    }
+                    
+                    const target = e.target;
+                    // Only drag if clicking on node background or header, not interactive elements
+                    if (target.tagName === 'BUTTON' || 
+                        target.tagName === 'TEXTAREA' || 
+                        target.tagName === 'INPUT' ||
+                        target.closest('button') ||
+                        target.classList.contains('node-icon')) {
+                        return;
+                    }
+                    
+                    console.log('[v0] Node mousedown - starting drag', node.id);
+                    e.stopPropagation();
+                    handleNodeMouseDown(e, node);
+                };
+
+                const header = document.createElement('div');
+                header.className = 'node-header';
+
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'node-icon';
+                iconSpan.textContent = node.icon;
+                header.appendChild(iconSpan);
+
+                const input = document.createElement('textarea');
+                input.className = 'node-input';
+                input.value = node.text;
+                input.rows = 1;
+                input.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag when clicking textarea
+                };
+                input.oninput = (e) => {
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                    node.text = e.target.value;
+                    saveToLocalStorage();
+                };
+                setTimeout(() => {
+                    input.style.height = 'auto';
+                    input.style.height = input.scrollHeight + 'px';
+                }, 0);
+                header.appendChild(input);
+
+                nodeEl.appendChild(header);
+
+                if (node.image) {
+                    const img = document.createElement('img');
+                    img.className = 'node-image';
+                    img.src = node.image;
+                    nodeEl.appendChild(img);
+                }
+
+                const controls = document.createElement('div');
+                controls.className = 'node-controls';
+
+                const addChildBtn = document.createElement('button');
+                addChildBtn.className = 'node-btn';
+                addChildBtn.textContent = '+ branch';
+                addChildBtn.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag
+                };
+                addChildBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    createNode(node.id, node.x + 200, node.y + 100);
+                };
+                controls.appendChild(addChildBtn);
+
+                const imageBtn = document.createElement('button');
+                imageBtn.className = 'node-btn';
+                imageBtn.textContent = '🖼️ picture';
+                imageBtn.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag
+                };
+                imageBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const input = document.getElementById('imageInput');
+                    input.value = '';
+                    input.onchange = (evt) => {
+                        const file = evt.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (readerEvent) => {
+                                node.image = readerEvent.target.result;
+                                renderNodes();
+                                drawConnections();
+                                saveToLocalStorage();
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                        input.value = '';
+                    };
+                    input.click();
+                };
+                controls.appendChild(imageBtn);
+
+                if (node.image) {
+                    const removeImageBtn = document.createElement('button');
+                    removeImageBtn.className = 'node-btn';
+                    removeImageBtn.textContent = '✕ delete pic';
+                    removeImageBtn.onmousedown = (e) => {
+                        e.stopPropagation(); // Prevent header drag
+                    };
+                    removeImageBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        node.image = null;
+                        renderNodes();
+                        saveToLocalStorage();
+                    };
+                    controls.appendChild(removeImageBtn);
+                }
+
+                const iconBtn = document.createElement('button');
+                iconBtn.className = 'node-btn';
+                iconBtn.textContent = '🎨';
+                iconBtn.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag
+                };
+                iconBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    iconSelector.dataset.nodeId = node.id;
+                    iconSelector.style.display = 'block';
+                    iconSelector.style.left = e.pageX + 'px';
+                    iconSelector.style.top = e.pageY + 'px';
+                };
+                controls.appendChild(iconBtn);
+
+                const colorBtn = document.createElement('button');
+                colorBtn.className = 'node-btn';
+                colorBtn.textContent = '🎨';
+                colorBtn.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag
+                };
+                colorBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    colorSelector.dataset.nodeId = node.id;
+                    colorSelector.style.display = 'block';
+                    colorSelector.style.left = e.pageX + 'px';
+                    colorSelector.style.top = e.pageY + 'px';
+                };
+                controls.appendChild(colorBtn);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'node-btn';
+                deleteBtn.textContent = '🗑️';
+                deleteBtn.onmousedown = (e) => {
+                    e.stopPropagation(); // Prevent header drag
+                };
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteNode(node.id);
+                };
+                controls.appendChild(deleteBtn);
+
+                nodeEl.appendChild(controls);
+
+                nodesContainer.appendChild(nodeEl);
+            });
+
+            renderGroups();
+            updateMinimap();
+        }
+
+        function toggleNodeSelection(nodeId) {
+            if (selectedNodes.has(nodeId)) {
+                selectedNodes.delete(nodeId);
+            } else {
+                selectedNodes.add(nodeId);
+            }
+        }
+
+        function deleteNode(nodeId) {
+            nodes = nodes.filter(n => n.id !== nodeId);
+            connections = connections.filter(c => c.from !== nodeId && c.to !== nodeId);
+            selectedNodes.delete(nodeId);
+            renderNodes();
+            drawConnections();
+            saveToLocalStorage();
+        }
+
+        // グループ作成
+        function createGroup() {
+            if (selectedNodes.size < 2) {
+                alert('2つ以上のノードを選択してください（Ctrl/Cmdクリック）');
+                return;
+            }
+
+            const groupName = prompt('グループ名を入力してください:', 'グループ' + groupIdCounter);
+            if (!groupName) return;
+
+            const group = {
+                id: groupIdCounter++,
+                name: groupName,
+                nodeIds: Array.from(selectedNodes)
+            };
+            groups.push(group);
+            selectedNodes.clear();
+            renderNodes();
+            saveToLocalStorage();
+        }
+
+        // グループ描画
+        function renderGroups() {
+            groups.forEach(group => {
+                const groupNodes = nodes.filter(n => group.nodeIds.includes(n.id));
+                if (groupNodes.length === 0) return;
+
+                const xs = groupNodes.map(n => n.x);
+                const ys = groupNodes.map(n => n.y);
+                const minX = Math.min(...xs);
+                const minY = Math.min(...ys);
+                const maxX = Math.max(...xs);
+                const maxY = Math.max(...ys);
+
+                const groupEl = document.createElement('div');
+                groupEl.className = 'group';
+                groupEl.dataset.id = group.id;
+                groupEl.style.left = `${(minX - 20) * scale + canvasOffset.x}px`;
+                groupEl.style.top = `${(minY - 40) * scale + canvasOffset.y}px`;
+                groupEl.style.width = `${(maxX - minX + 220) * scale}px`;
+                groupEl.style.height = `${(maxY - minY + 120) * scale}px`;
+                groupEl.style.transform = `scale(${scale})`;
+                groupEl.style.transformOrigin = '0 0';
+
+                const label = document.createElement('div');
+                label.className = 'group-label';
+                label.textContent = group.name;
+                label.onmousedown = (e) => {
+                    e.stopPropagation();
+                    draggedGroup = group;
+                    dragStartPos = { x: e.clientX, y: e.clientY };
+                };
+                groupEl.appendChild(label);
+
+                nodesContainer.appendChild(groupEl);
+            });
+        }
+
+        function updateNodePositions() {
+            selectedNodes.forEach(nodeId => {
+                const node = nodes.find(n => n.id === nodeId);
+                if (node) {
+                    const nodeEl = document.getElementById(`node-${node.id}`);
+                    if (nodeEl) {
+                        nodeEl.style.left = (node.x * scale + canvasOffset.x) + 'px';
+                        nodeEl.style.top = (node.y * scale + canvasOffset.y) + 'px';
+                        nodeEl.style.transform = `scale(${scale})`;
+                    }
+                }
+            });
+            updateGroupsPosition();
+        }
+
+        // マウスイベント
+        container.addEventListener('mousedown', (e) => {
+            if (isPanMode) {
+                isDraggingCanvas = true;
+                container.classList.add('dragging');
+                dragStartPos = { x: e.clientX, y: e.clientY };
+                iconSelector.style.display = 'none';
+                colorSelector.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.shiftKey) && !isPanMode) {
+                isPanMode = true;
+                container.classList.add('pan-mode');
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (!e.ctrlKey && !e.shiftKey && isPanMode) {
+                isPanMode = false;
+                container.classList.remove('pan-mode');
+            }
+        });
+
+        function drawConnections() {
+            ctx.clearRect(0, 0, edgeCanvas.width, edgeCanvas.height);
+            ctx.lineWidth = 2;
+
+            connections.forEach(conn => {
+                const fromNode = nodes.find(n => n.id === conn.from);
+                const toNode = nodes.find(n => n.id === conn.to);
+                if (fromNode && toNode) {
+                    ctx.strokeStyle = fromNode.color || '#6366f1';
+                    ctx.beginPath();
+                    
+                    // Node DOM position: (node.x * scale) + canvasOffset.x
+                    // Node width is 300px, so center is at +150px in screen space (already scaled by transform)
+                    const fromCenterX = (fromNode.x * scale) + canvasOffset.x + 150;
+                    const fromCenterY = (fromNode.y * scale) + canvasOffset.y + 75;
+                    const toCenterX = (toNode.x * scale) + canvasOffset.x + 150;
+                    const toCenterY = (toNode.y * scale) + canvasOffset.y + 75;
+                    
+                    ctx.moveTo(fromCenterX, fromCenterY);
+                    ctx.lineTo(toCenterX, toCenterY);
+                    ctx.stroke();
+                }
+            });
+
+            updateMinimap();
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            if (draggedNode) {
+                const dx = (e.clientX - dragStartPos.x) / scale;
+                const dy = (e.clientY - dragStartPos.y) / scale;
+                
+                selectedNodes.forEach(nodeId => {
+                    const node = nodes.find(n => n.id === nodeId);
+                    if (node) {
+                        node.x += dx;
+                        node.y += dy;
+                    }
+                });
+                
+                dragStartPos = { x: e.clientX, y: e.clientY };
+                updateNodePositions();
+                drawConnections();
+            } else if (draggedGroup) {
+                const dx = (e.clientX - dragStartPos.x) / scale;
+                const dy = (e.clientY - dragStartPos.y) / scale;
+                
+                draggedGroup.nodeIds.forEach(nodeId => {
+                    const node = nodes.find(n => n.id === nodeId);
+                    if (node) {
+                        node.x += dx;
+                        node.y += dy;
+                    }
+                });
+                
+                dragStartPos = { x: e.clientX, y: e.clientY };
+                updateNodePositions();
+                drawConnections();
+            } else if (isDraggingCanvas) {
+                const dx = e.clientX - dragStartPos.x;
+                const dy = e.clientY - dragStartPos.y;
+                canvasOffset.x += dx;
+                canvasOffset.y += dy;
+                dragStartPos = { x: e.clientX, y: e.clientY };
+                renderNodes();
+                drawConnections();
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            console.log('[v0] mouseup event fired', { draggedNode: !!draggedNode, draggedGroup: !!draggedGroup });
+            if (draggedNode || draggedGroup) {
+                saveToLocalStorage();
+            }
+            resetDragState();
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            console.log('[v0] window mouseup event fired');
+            resetDragState();
+        });
+
+        function updateGroupsPosition() {
+            groups.forEach(group => {
+                const groupNodes = nodes.filter(n => group.nodeIds.includes(n.id));
+                if (groupNodes.length === 0) return;
+
+                const xs = groupNodes.map(n => n.x);
+                const ys = groupNodes.map(n => n.y);
+                const minX = Math.min(...xs);
+                const minY = Math.min(...ys);
+                const maxX = Math.max(...xs);
+                const maxY = Math.max(...ys);
+
+                const groupEl = document.querySelector(`.group[data-id="${group.id}"]`);
+                if (groupEl) {
+                    groupEl.style.left = `${(minX - 20) * scale + canvasOffset.x}px`;
+                    groupEl.style.top = `${(minY - 40) * scale + canvasOffset.y}px`;
+                    groupEl.style.width = `${(maxX - minX + 220) * scale}px`;
+                    groupEl.style.height = `${(maxY - minY + 120) * scale}px`;
+                    groupEl.style.transform = `scale(${scale})`;
+                }
+            });
+        }
+
+        // TXT出力
+        function exportToTxt() {
+            let output = 'Outline \n\n';
+            
+            function buildTree(nodeId, depth = 0) {
+                const node = nodes.find(n => n.id === nodeId);
+                if (!node) return;
+                
+                const indent = '  '.repeat(depth);
+                output += `${indent}${node.icon} ${node.text}\n`;
+                
+                const children = connections.filter(c => c.from === nodeId);
+                children.forEach(conn => buildTree(conn.to, depth + 1));
+            }
+            
+            const rootNodes = nodes.filter(n => !connections.some(c => c.to === n.id));
+            rootNodes.forEach(node => buildTree(node.id));
+            
+            const blob = new Blob([output], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mindmap.txt';
+            a.click();
+        }
+
+        // JSON保存
+        function exportToJson() {
+            const data = { nodes, connections, groups };
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mindmap.json';
+            a.click();
+        }
+
+        // JSON読込
+        function importFromJson() {
+            const input = document.getElementById('fileInput');
+            input.value = ''; // Reset to allow same file selection
+            input.onchange = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        nodes = data.nodes || [];
+                        connections = data.connections || [];
+                        groups = data.groups || [];
+                        nodeIdCounter = Math.max(...nodes.map(n => n.id), 0) + 1;
+                        groupIdCounter = Math.max(...groups.map(g => g.id), 0) + 1;
+                        renderNodes();
+                        drawConnections();
+                        saveToLocalStorage();
+                        alert('read the JSON file');
+                    } catch (err) {
+                        console.error('[v0] JSON parse error:', err);
+                        alert('error to read the JSON file: ' + err.message);
+                    }
+                };
+                reader.onerror = (err) => {
+                    console.error('[v0] File read error:', err);
+                    alert('error to read the file');
+                };
+                reader.readAsText(file);
+                input.value = ''; // Reset after reading
+            };
+            input.click();
+        }
+
+        // 新規作成
+        function createNewMindmap() {
+            if (confirm('Make a new canvas')) {
+                nodes = [];
+                connections = [];
+                groups = [];
+                selectedNodes.clear();
+                nodeIdCounter = 1;
+                groupIdCounter = 1;
+                createNode(null, 400, 300);
+                renderNodes();
+                drawConnections();
+                saveToLocalStorage();
+            }
+        }
+
+        // 画像出力
+        async function exportToPNG() {
+            await exportAsImage('png');
+        }
+
+        async function exportToJPG() {
+            await exportAsImage('jpg');
+        }
+
+        async function exportAsImage(type) {
+            // Calculate bounding box of all nodes
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            nodes.forEach(node => {
+                // Approximate node dimensions for bounding box calculation
+                const nodeWidth = 300; 
+                const nodeHeight = node.image ? 400 : 150; // Consider image height
+                minX = Math.min(minX, node.x);
+                minY = Math.min(minY, node.y);
+                maxX = Math.max(maxX, node.x + nodeWidth);
+                maxY = Math.max(maxY, node.y + nodeHeight);
+            });
+
+            // Add padding
+            const padding = 50;
+            minX -= padding;
+            minY -= padding;
+            maxX += padding;
+            maxY += padding;
+
+            const width = maxX - minX;
+            const height = maxY - minY;
+
+            // Create export canvas
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = width * 2; // 2x resolution for better quality
+            exportCanvas.height = height * 2;
+            const exportCtx = exportCanvas.getContext('2d');
+            exportCtx.scale(2, 2); // Scale context by 2
+
+            // Draw background
+            exportCtx.fillStyle = '#0a0e27';
+            exportCtx.fillRect(0, 0, width, height);
+
+            // Draw edges
+            exportCtx.lineWidth = 2;
+            
+            connections.forEach(conn => {
+                const fromNode = nodes.find(n => n.id === conn.from);
+                const toNode = nodes.find(n => n.id === conn.to);
+                if (fromNode && toNode) {
+                    exportCtx.strokeStyle = fromNode.color || '#6366f1';
+                    exportCtx.beginPath();
+                    
+                    // Adjust positions relative to the export canvas and minX/minY
+                    const fromX = fromNode.x + 150 - minX;
+                    const fromY = fromNode.y + 75 - minY; // Adjusted vertical center
+                    const toX = toNode.x + 150 - minX;
+                    const toY = toNode.y + 75 - minY; // Adjusted vertical center
+                    
+                    ctx.moveTo(fromX, fromY);
+                    ctx.lineTo(toX, toY);
+                    ctx.stroke();
+                }
+            });
+
+            // Draw nodes
+            const imagePromises = nodes.map(async (node) => {
+                const x = node.x - minX;
+                const y = node.y - minY;
+                const nodeWidth = 300;
+                const baseHeight = 150;
+
+                // Draw node background
+                exportCtx.fillStyle = '#1e293b'; // Node background color
+                exportCtx.strokeStyle = node.color || '#6366f1';
+                exportCtx.lineWidth = 2;
+                
+                let nodeHeight = baseHeight;
+                if (node.image) {
+                    nodeHeight = 400; // Adjusted height to accommodate image
+                }
+
+                exportCtx.beginPath();
+                exportCtx.roundRect(x, y, nodeWidth, nodeHeight, 10);
+                exportCtx.fill();
+                exportCtx.stroke();
+
+                // Draw icon
+                const iconMap = {
+                    '💡': '💡',
+                    '⭕': '⭕',
+                    '⭐': '⭐',
+                    '■': '■',
+                    '▲': '▲',
+                    '😊': '😊',
+                    '😢': '😢',
+                    '✓': '✓',
+                    '❗': '❗',
+                    '❓': '❓',
+                    '🏠': '🏠',
+                    '📝': '📝',
+                    '✏️': '✏️'
+                };
+                exportCtx.font = '24px Arial';
+                exportCtx.fillStyle = '#fbbf24'; // Yellow icon color
+                exportCtx.fillText(iconMap[node.icon] || '💡', x + 15, y + 35);
+
+                // Draw text
+                exportCtx.font = '16px Arial';
+                exportCtx.fillStyle = '#f1f5f9'; // Light gray text
+                const lines = node.text.split('\n');
+                lines.forEach((line, i) => {
+                    // Adjust line spacing and position
+                    exportCtx.fillText(line, x + 50, y + 30 + (i * 20)); 
+                });
+
+                // Draw image if exists
+                if (node.image) {
+                    try {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous'; // For loading images from other origins
+                        await new Promise((resolve, reject) => {
+                            img.onload = () => {
+                                // Calculate dimensions to fit within the node
+                                const maxWidth = 280; // Max width for image within node
+                                const maxHeight = 200; // Max height for image within node
+                                let drawWidth = img.width;
+                                let drawHeight = img.height;
+                                
+                                const aspectRatio = img.width / img.height;
+                                
+                                // Scale down if wider than max width
+                                if (drawWidth > maxWidth) {
+                                    drawWidth = maxWidth;
+                                    drawHeight = drawWidth / aspectRatio;
+                                }
+                                
+                                // Scale down if taller than max height
+                                if (drawHeight > maxHeight) {
+                                    drawHeight = maxHeight;
+                                    drawWidth = drawHeight * aspectRatio;
+                                }
+                                
+                                // Center the image within the available space
+                                const imgX = x + 10 + (nodeWidth - 20 - drawWidth) / 2; // 20px padding
+                                const imgY = y + 70 + (nodeHeight - baseHeight - (maxHeight - drawHeight)) / 2; // Space below header and centered
+                                
+                                exportCtx.drawImage(img, imgX, imgY, drawWidth, drawHeight);
+                                resolve();
+                            };
+                            img.onerror = reject;
+                            img.src = node.image;
+                        });
+                    } catch (e) {
+                        console.error('Failed to load image for export:', e);
+                    }
+                }
+            });
+
+            // Wait for all image loading promises to resolve
+            await Promise.all(imagePromises);
+
+            // Export the canvas to a blob
+            exportCanvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mindmap.${type}`;
+                a.click();
+                URL.revokeObjectURL(url); // Clean up the object URL
+            }, type === 'jpg' ? 'image/jpeg' : 'image/png', 0.98); // Quality for JPG
+        }
+
+
+        // ビューをリセット
+        function resetView() {
+            scale = 1;
+            canvasOffset.x = 0;
+            canvasOffset.y = 0;
+            updateZoomDisplay();
+            renderNodes();
+            drawConnections();
+        }
+
+        function updateZoomDisplay() {
+            if (zoomIndicator) {
+                zoomIndicator.textContent = Math.round(scale * 100) + '%';
+            }
+        }
+
+        function saveToLocalStorage() {
+            try {
+                const data = { nodes, connections, groups };
+                localStorage.setItem('mindmapData', JSON.stringify(data));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.warn('[v0] localStorage quota exceeded. Auto-save disabled.');
+                    // Show a one-time warning to the user
+                    if (!localStorage.getItem('quotaWarningShown')) {
+                        alert('自動保存の容量制限を超えました。\n\n画像を含む大きなマインドマップは「JSON保存」ボタンでファイルに保存してください。\n\n自動保存は無効化されました。');
+                        localStorage.setItem('quotaWarningShown', 'true');
+                    }
+                } else {
+                    console.error('Failed to save to localStorage:', e);
+                }
+            }
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('mindmapData');
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    nodes = data.nodes || [];
+                    connections = data.connections || [];
+                    groups = data.groups || [];
+                    nodeIdCounter = Math.max(...nodes.map(n => n.id), 0) + 1;
+                    groupIdCounter = Math.max(...groups.map(g => g.id), 0) + 1;
+                } catch (e) {
+                    console.error('Failed to load from localStorage:', e);
+                }
+            }
+            
+            if (nodes.length === 0) {
+                createNode(null, 400, 300);
+            }
+            
+            renderNodes();
+            drawConnections();
+        }
+
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = Math.max(0.5, Math.min(3, scale * delta)); // Increased max scale to 3
+            
+            if (newScale !== scale) {
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                const worldX = (mouseX - canvasOffset.x) / scale;
+                const worldY = (mouseY - canvasOffset.y) / scale;
+                
+                scale = newScale;
+                
+                canvasOffset.x = mouseX - worldX * scale;
+                canvasOffset.y = mouseY - worldY * scale;
+                
+                updateZoomDisplay();
+                renderNodes();
+                drawConnections();
+            }
+        });
+
+        container.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // Two-finger touch for pinch zoom
+                e.preventDefault();
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                touchStartDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                const centerX = (touch1.clientX + touch2.clientX) / 2;
+                const centerY = (touch1.clientY + touch2.clientY) / 2;
+                lastTouchPos = { x: centerX, y: centerY };
+            } else if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                const target = document.elementFromPoint(touch.clientX, touch.clientY);
+                
+                // Check if touching a node
+                const nodeEl = target.closest('.node');
+                if (nodeEl) {
+                    const nodeId = parseInt(nodeEl.dataset.id);
+                    const node = nodes.find(n => n.id === nodeId);
+                    if (node) {
+                        handleNodeTouchStart(touch, node);
+                    }
+                } else if (target === container || target === edgeCanvas) {
+                    // Canvas panning
+                    isDraggingCanvas = true;
+                    dragStartPos = { x: touch.clientX, y: touch.clientY };
+                    iconSelector.style.display = 'none';
+                    colorSelector.style.display = 'none';
+                }
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                // Pinch zoom
+                e.preventDefault();
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                const currentDistance = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+                
+                if (touchStartDistance > 0) {
+                    const delta = currentDistance / touchStartDistance;
+                    const newScale = Math.max(0.5, Math.min(3, scale * delta)); // Increased max scale to 3
+                    
+                    if (newScale !== scale && lastTouchPos) {
+                        const rect = container.getBoundingClientRect();
+                        const touchX = lastTouchPos.x - rect.left;
+                        const touchY = lastTouchPos.y - rect.top;
+                        
+                        const worldX = (touchX - canvasOffset.x) / scale;
+                        const worldY = (touchY - canvasOffset.y) / scale;
+                        
+                        scale = newScale;
+                        
+                        canvasOffset.x = touchX - worldX * scale;
+                        canvasOffset.y = touchY - worldY * scale;
+                        
+                        updateZoomDisplay();
+                        renderNodes();
+                        drawConnections();
+                    }
+                    
+                    touchStartDistance = currentDistance;
+                }
+            } else if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                
+                if (draggedNode) {
+                    e.preventDefault();
+                    const dx = (touch.clientX - dragStartPos.x) / scale;
+                    const dy = (touch.clientY - dragStartPos.y) / scale;
+                    
+                    selectedNodes.forEach(nodeId => {
+                        const node = nodes.find(n => n.id === nodeId);
+                        if (node) {
+                            node.x += dx;
+                            node.y += dy;
+                        }
+                    });
+                    
+                    dragStartPos = { x: touch.clientX, y: touch.clientY };
+                    updateNodePositions();
+                    drawConnections();
+                } else if (draggedGroup) {
+                    e.preventDefault();
+                    const dx = (touch.clientX - dragStartPos.x) / scale;
+                    const dy = (touch.clientY - dragStartPos.y) / scale;
+                    
+                    draggedGroup.nodeIds.forEach(nodeId => {
+                        const node = nodes.find(n => n.id === nodeId);
+                        if (node) {
+                            node.x += dx;
+                            node.y += dy;
+                        }
+                    });
+                    
+                    dragStartPos = { x: touch.clientX, y: touch.clientY };
+                    updateNodePositions();
+                    drawConnections();
+                } else if (isDraggingCanvas) {
+                    e.preventDefault();
+                    const dx = touch.clientX - dragStartPos.x;
+                    const dy = touch.clientY - dragStartPos.y;
+                    canvasOffset.x += dx;
+                    canvasOffset.y += dy;
+                    dragStartPos = { x: touch.clientX, y: touch.clientY };
+                    renderNodes();
+                    drawConnections();
+                }
+            }
+        }, { passive: false });
+
+        container.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                if (draggedNode || draggedGroup) {
+                    saveToLocalStorage();
+                }
+                resetDragState();
+                touchStartDistance = 0;
+                lastTouchPos = null;
+            } else if (e.touches.length === 1) {
+                // Reset two-finger zoom state
+                touchStartDistance = 0;
+                lastTouchPos = null;
+            }
+        });
+
+        function handleNodeMouseDown(e, node) {
+            e.stopPropagation();
+            
+            // Select node
+            if (!selectedNodes.has(node.id)) {
+                if (!e.ctrlKey && !e.metaKey) {
+                    selectedNodes.clear();
+                }
+                selectedNodes.add(node.id);
+                renderNodes();
+            }
+            
+            // Start dragging this node
+            draggedNode = node;
+            dragStartPos = { 
+                x: e.clientX, 
+                y: e.clientY 
+            };
+            iconSelector.style.display = 'none';
+            colorSelector.style.display = 'none';
+        }
+
+        function handleNodeTouchStart(touch, node) {
+            if (!selectedNodes.has(node.id)) {
+                selectedNodes.clear();
+                selectedNodes.add(node.id);
+                renderNodes();
+            }
+            
+            draggedNode = node;
+            dragStartPos = { x: touch.clientX, y: touch.clientY };
+        }
+
+        function resetDragState() {
+            if (draggedNode || draggedGroup || isPanning || isDraggingCanvas) {
+                console.log('[v0] Resetting drag state');
+                draggedNode = null;
+                draggedGroup = null;
+                isPanning = false;
+                isDraggingCanvas = false;
+                dragStartPos = null;
+            }
+            container.classList.remove('dragging');
+        }
+
+        // Initializations and Event Listeners
+        loadFromLocalStorage();
+
+        async function generateReferences() {
+            const panel = document.getElementById('references-panel');
+            const content = document.getElementById('references-content');
+            
+            panel.classList.add('open');
+            container.classList.add('with-panel'); // Add class to adjust container width
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p>now working... generating references...</p></div>';
+            
+            const allText = nodes.map(n => n.text).filter(t => t && t.trim()).join('\n');
+            
+            if (!allText.trim()) {
+                content.innerHTML = '<p class="error">No text on your map</p>';
+                return;
+            }
+
+            const apiKey = localStorage.getItem('gemini_api_key');
+            
+            if (!apiKey) {
+                content.innerHTML = '<div class="error">The Gemini API key has not been configured.</div><p style="margin-top: 12px; color: #94a3b8; font-size: 13px;">Click the “API Settings” button on the toolbar and enter your API key.<br><br>You can get your API key at<a href="https://aistudio.google.com/apikey" target="_blank" style="color: #60a5fa;">Google AI Studio</a>.</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `以下のマインドマップのテキストを分析し、関連する学術文献をAPA 7th形式で20から50個提案してください。実在する文献を推奨してください。英語あるいは日本語で、海外の研究を中心に文献を挙げてください。\n\nマインドマップの内容:\n${allText}`
+                            }]
+                        }]
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || 'API request failed');
+                }
+                
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                    const referencesText = data.candidates[0].content.parts[0].text;
+                    const references = referencesText
+                        .split('\n')
+                        .filter(line => line.trim() && !line.startsWith('#') && !line.startsWith('**'))
+                        .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                        .filter(line => line.length > 10);
+                    
+                    if (references.length > 0) {
+                        content.innerHTML = references
+                            .map(ref => `<div class="reference-item">${ref}</div>`)
+                            .join('');
+                    } else {
+                        content.innerHTML = '<p class="error">The reference list could not be generated.</p>';
+                    }
+                } else {
+                    content.innerHTML = '<p class="error">The reference list could not be generated.</p>';
+                }
+            } catch (error) {
+                console.error('[v0] Error generating references:', error);
+                content.innerHTML = `<div class="error">error: ${error.message}</div>
+                    <p style="margin-top: 12px; color: #94a3b8; font-size: 13px;">APIキーが正しいか、<a href="https://aistudio.google.com/apikey" target="_blank" style="color: #60a5fa;">Google AI Studio</a>で確認してください。</p>`;
+            }
+        }
+
+        function displayReferences(references) {
+            const content = document.getElementById('references-content');
+            
+            if (!references || references.length === 0) {
+                content.innerHTML = '<p style="color: #94a3b8;">No relevant references were found.</p>';
+                return;
+            }
+
+            const html = references.map(ref => 
+                `<div class="reference-item">${ref}</div>`
+            ).join('');
+            
+            content.innerHTML = html;
+        }
+
+        // Renamed from showApiSettings to openApiSettings to match the button's onclick
+        function openApiSettings() {
+            const currentKey = localStorage.getItem('gemini_api_key') || '';
+            const newKey = prompt('Please enter your Gemini API key.:\n\n(Available on Google AI Studio: https://aistudio.google.com/apikey)', currentKey);
+            
+            if (newKey !== null) {
+                if (newKey.trim()) {
+                    localStorage.setItem('gemini_api_key', newKey.trim());
+                    alert('The API key has been saved.');
+                } else {
+                    localStorage.removeItem('gemini_api_key');
+                    alert('The API key has been deleted.');
+                }
+            }
+        }
+
+        function closeReferencesPanel() {
+            const panel = document.getElementById('references-panel');
+            const container = document.getElementById('container');
+            panel.classList.remove('open');
+            container.classList.remove('with-panel');
+        }
+
+        function toggleReferencesPanel() {
+            const panel = document.getElementById('references-panel');
+            const container = document.getElementById('container');
+            if (panel.classList.contains('open')) {
+                closeReferencesPanel();
+            } else {
+                generateReferences(); // This will also open the panel and add the 'with-panel' class
+            }
+        }
+
+        async function generateDocument() {
+            const panel = document.getElementById('document-panel');
+            const content = document.getElementById('document-content');
+            
+            panel.classList.add('open');
+            container.classList.add('with-doc-panel');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p>Now working... Generating thesis...</p></div>';
+            
+            const allText = nodes.map(n => n.text).filter(t => t && t.trim()).join('\n');
+            
+            if (!allText.trim()) {
+                content.innerHTML = '<p class="error">No text on the map</p>';
+                return;
+            }
+
+            const apiKey = localStorage.getItem('gemini_api_key');
+            
+            if (!apiKey) {
+                content.innerHTML = '<div class="error">The Gemini API key has not been configured.</div><p style="margin-top: 12px; color: #94a3b8; font-size: 13px;">Click the “API Settings” button on the toolbar and enter your API key.<br><br>You can get your API key at<a href="https://aistudio.google.com/apikey" target="_blank" style="color: #60a5fa;">Google AI Studio</a>.</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `マインドマップの内容を基に、学術論文形式の文書を生成してください。
+
+もしユーザが、マップに構成を示している場合は、その内容に準じて、高度に論理展開できるように配慮して、各パートを1000字程度で記してください。もし、欠損している箇所がある場合は、下に記す、マップで構成を示していない場合を参考に、論理的かつクリティカルな論文に仕上げてください。
+
+もしユーザが、マップで構成を示していない場合は、以下の構成で作成してください：
+1. タイトル
+2. 要旨（Abstract）
+3. はじめに（Introduction）
+4. 本論（Body）- マインドマップの内容を論理的に構成
+5. 結論（Conclusion）
+6. 今後の課題
+
+「はじめに」は、マップの中心的テーマにもとづいて、マップに書かれていることを踏まえて、さらに、現在の社会的な問題を踏まえて、1000字程度で書いてください。もし、研究の目的が書かれていたら、それを研究テーマとしてしたがって、記述してください。
+「本論」は、マップの内容にもよりますが、先行研究と分析結果から構成します。先行研究では、テーマに即した先行研究を30個ほど挙げながら、1000字程度で記述します。先行研究をクリティカルに捉えつつ、傾向を把握することを目指して、整理してください。分析結果は、ユーザが書いている結果に従って、1000字程度に膨らませて記述します。ユーザがとくに書いていない場合は、テーマから想定される結果を1000字程度で記述してください。おもに、マインドマップの内容を理論的に構成してください。
+「結論」は、DiscussionとConclusionで構成されます。Discussionでは、目的とテーマを、結果に照らして考察します。1000字程度で記述してください。何もユーザが書いていない場合は、想定されることを1000字程度で書いてください。Conclusionでは、その考察を踏まえて、本研究の学術的意義を1000字程度に記してください。
+「今後の課題」では、学術的意義と可能を踏まえて、1000字程度で述べてください。箇条書きではなく、論理的に記述してください。
+
+マインドマップの内容:
+${allText}
+
+日本語あるいは英語で、論文らしい文体で記述してください。`
+                            }]
+                        }]
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || 'APIリクエストに失敗しました');
+                }
+                
+                const data = await response.json();
+                
+                if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                    const documentText = data.candidates[0].content.parts[0].text;
+                    content.innerHTML = `
+                        <div class="document-text" id="generated-document">${documentText}</div>
+                        <button onclick="copyDocument()" class="copy-btn">📋 Copy the document</button>
+                    `;
+                } else {
+                    content.innerHTML = '<p class="error">The thesis could not be generated.</p>';
+                }
+            } catch (error) {
+                console.error('[v0] Error generating thesis:', error);
+                content.innerHTML = `<div class="error">error: ${error.message}</div>
+                    <p style="margin-top: 12px; color: #94a3b8; font-size: 13px;">APIキーが正しいか、<a href="https://aistudio.google.com/apikey" target="_blank" style="color: #60a5fa;">Google AI Studio</a>で確認してください。</p>`;
+            }
+        }
+
+        function copyDocument() {
+            const documentText = document.getElementById('generated-document').innerText;
+            navigator.clipboard.writeText(documentText).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                btn.style.background = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                }, 2000);
+            }).catch(err => {
+                console.error('[v0] Copy failed:', err);
+                alert('Copy failed');
+            });
+        }
+
+        function closeDocumentPanel() {
+            const panel = document.getElementById('document-panel');
+            const container = document.getElementById('container');
+            panel.classList.remove('open');
+            container.classList.remove('with-doc-panel');
+        }
+
+        function updateMinimap() {
+            if (!minimapVisible) return;
+            
+            const minimapWidth = 200;
+            const minimapHeight = 150;
+            minimapCanvas.width = minimapWidth;
+            minimapCanvas.height = minimapHeight;
+
+            minimapCtx.fillStyle = '#1a1a2e';
+            minimapCtx.fillRect(0, 0, minimapWidth, minimapHeight);
+            
+            if (nodes.length === 0) return;
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            nodes.forEach(node => {
+                minX = Math.min(minX, node.x);
+                minY = Math.min(minY, node.y);
+                maxX = Math.max(maxX, node.x + 300);
+                maxY = Math.max(maxY, node.y + 150);
+            });
+            
+            const worldWidth = maxX - minX;
+            const worldHeight = maxY - minY;
+            const minimapScale = Math.min(minimapWidth / worldWidth, minimapHeight / worldHeight) * 0.85;
+            
+            minimapBounds = { minX, minY, maxX, maxY, minimapScale };
+            
+            minimapCtx.strokeStyle = 'rgba(99, 102, 241, 0.5)';
+            minimapCtx.lineWidth = 1;
+            connections.forEach(conn => {
+                const fromNode = nodes.find(n => n.id === conn.from);
+                const toNode = nodes.find(n => n.id === conn.to);
+                if (fromNode && toNode) {
+                    const fromX = (fromNode.x + 150 - minX) * minimapScale;
+                    const fromY = (fromNode.y + 75 - minY) * minimapScale;
+                    const toX = (toNode.x + 150 - minX) * minimapScale;
+                    const toY = (toNode.y + 75 - minY) * minimapScale;
+                    
+                    minimapCtx.beginPath();
+                    minimapCtx.moveTo(fromX, fromY);
+                    minimapCtx.lineTo(toX, toY);
+                    minimapCtx.stroke();
+                }
+            });
+            
+            nodes.forEach(node => {
+                const x = (node.x - minX) * minimapScale;
+                const y = (node.y - minY) * minimapScale;
+                const nodeWidth = 300 * minimapScale;
+                const nodeHeight = 150 * minimapScale;
+                
+                minimapCtx.fillStyle = node.color || '#6366f1';
+                minimapCtx.fillRect(x, y, Math.max(4, nodeWidth), Math.max(3, nodeHeight));
+            });
+            
+            const viewportWorldX = (-canvasOffset.x) / scale;
+            const viewportWorldY = (-canvasOffset.y) / scale;
+            const viewportWorldWidth = container.clientWidth / scale;
+            const viewportWorldHeight = container.clientHeight / scale;
+            
+            // Calculate viewport position and size on minimap
+            const viewportX = (viewportWorldX - minX) * minimapScale;
+            const viewportY = (viewportWorldY - minY) * minimapScale;
+            const viewportWidth = viewportWorldWidth * minimapScale;
+            const viewportHeight = viewportWorldHeight * minimapScale;
+
+            minimapCtx.fillStyle = 'rgba(255, 107, 107, 0.2)';
+            minimapCtx.fillRect(
+                Math.max(0, Math.min(minimapWidth - viewportWidth, viewportX)),
+                Math.max(0, Math.min(minimapHeight - viewportHeight, viewportY)),
+                Math.min(minimapWidth, viewportWidth),
+                Math.min(minimapHeight, viewportHeight)
+            );
+            
+            minimapCtx.strokeStyle = '#ff6b6b';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.strokeRect(
+                Math.max(0, Math.min(minimapWidth - viewportWidth, viewportX)),
+                Math.max(0, Math.min(minimapHeight - viewportHeight, viewportY)),
+                Math.min(minimapWidth, viewportWidth),
+                Math.min(minimapHeight, viewportHeight)
+            );
+        }
+
+        minimapCanvas.addEventListener('mousedown', (e) => {
+            if (!minimapVisible || nodes.length === 0) return;
+            
+            isDraggingMinimap = true;
+            updateViewportFromMinimap(e);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDraggingMinimap) {
+                updateViewportFromMinimap(e);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDraggingMinimap) {
+                isDraggingMinimap = false;
+            }
+        });
+
+        function updateViewportFromMinimap(e) {
+            const rect = minimapCanvas.getBoundingClientRect();
+            const minimapX = e.clientX - rect.left;
+            const minimapY = e.clientY - rect.top;
+            
+            const { minX, minY, minimapScale } = minimapBounds;
+            
+            const viewportWorldWidth = container.clientWidth / scale;
+            const viewportWorldHeight = container.clientHeight / scale;
+            
+            const worldX = (minimapX / minimapScale) + minX - (viewportWorldWidth / 2);
+            const worldY = (minimapY / minimapScale) + minY - (viewportWorldHeight / 2);
+            
+            canvasOffset.x = -worldX * scale;
+            canvasOffset.y = -worldY * scale;
+            
+            renderNodes();
+            drawConnections();
+            updateMinimap();
+        }
+
+        fitAllBtn.addEventListener('click', () => {
+            if (nodes.length === 0) return;
+
+            let minX = Infinity, minY = Infinity;
+            let maxX = -Infinity, maxY = -Infinity;
+
+            nodes.forEach(node => {
+                minX = Math.min(minX, node.x);
+                minY = Math.min(minY, node.y);
+                maxX = Math.max(maxX, node.x + 300); // Assuming default node width
+                maxY = Math.max(maxY, node.y + 100); // Approximate node height for bounding box
+            });
+
+            const worldWidth = maxX - minX;
+            const worldHeight = maxY - minY;
+            const rect = container.getBoundingClientRect();
+
+            // Calculate scale to fit all nodes within the container, with some padding
+            const scaleX = (rect.width * 0.9) / worldWidth;
+            const scaleY = (rect.height * 0.9) / worldHeight;
+            scale = Math.max(0.5, Math.min(3, Math.min(scaleX, scaleY))); // Ensure scale is between 0.5 and 3
+
+            // Calculate center of all nodes
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            // Calculate canvas offset to center the nodes
+            canvasOffset.x = rect.width / 2 - centerX * scale;
+            canvasOffset.y = rect.height / 2 - centerY * scale;
+
+            updateZoomDisplay();
+            renderNodes();
+            drawConnections();
+            updateMinimap(); // Update minimap after fitting
+        });
+    </script>
+</body>
+</html>

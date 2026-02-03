@@ -1290,9 +1290,9 @@
                     const toX = toNode.x + 150 - minX;
                     const toY = toNode.y + 75 - minY; // Adjusted vertical center
                     
-                    ctx.moveTo(fromX, fromY);
-                    ctx.lineTo(toX, toY);
-                    ctx.stroke();
+                    exportCtx.moveTo(fromX, fromY);
+                    exportCtx.lineTo(toX, toY);
+                    exportCtx.stroke();
                 }
             });
 
@@ -1722,9 +1722,12 @@
                         .filter(line => line.length > 10);
                     
                     if (references.length > 0) {
-                        content.innerHTML = references
-                            .map(ref => `<div class="reference-item">${ref}</div>`)
-                            .join('');
+                        content.innerHTML = `
+                            <div id="references-list">
+                                ${references.map(ref => `<div class="reference-item">${ref}</div>`).join('')}
+                            </div>
+                            <button onclick="copyReferences()" class="copy-btn">📋 Copy references</button>
+                        `;
                     } else {
                         content.innerHTML = '<p class="error">The reference list could not be generated.</p>';
                     }
@@ -1738,22 +1741,23 @@
             }
         }
 
-        function displayReferences(references) {
-            const content = document.getElementById('references-content');
-            
-            if (!references || references.length === 0) {
-                content.innerHTML = '<p style="color: #94a3b8;">No relevant references were found.</p>';
-                return;
-            }
-
-            const html = references.map(ref => 
-                `<div class="reference-item">${ref}</div>`
-            ).join('');
-            
-            content.innerHTML = html;
+        function copyReferences() {
+            const referencesText = document.getElementById('references-list').innerText;
+            navigator.clipboard.writeText(referencesText).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                btn.style.background = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+                }, 2000);
+            }).catch(err => {
+                console.error('[v0] Copy failed:', err);
+                alert('Copy failed');
+            });
         }
 
-        // Renamed from showApiSettings to openApiSettings to match the button's onclick
         function openApiSettings() {
             const currentKey = localStorage.getItem('gemini_api_key') || '';
             const newKey = prompt('Please enter your Gemini API key.:\n\n(Available on Google AI Studio: https://aistudio.google.com/apikey)', currentKey);
